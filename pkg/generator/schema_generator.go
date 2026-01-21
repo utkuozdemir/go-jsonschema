@@ -789,6 +789,8 @@ func (g *schemaGenerator) addStructField(
 
 	var extraTags []string
 
+	notNil := false
+
 	if ext := prop.GoJSONSchemaExtension; ext != nil {
 		for _, pkg := range ext.Imports {
 			g.output.file.Package.AddImport(pkg, "")
@@ -801,6 +803,8 @@ func (g *schemaGenerator) addStructField(
 		for tagKey, tagVal := range ext.ExtraTags {
 			extraTags = append(extraTags, fmt.Sprintf(`%s:"%s"`, tagKey, tagVal))
 		}
+
+		notNil = ext.NotNil
 	}
 
 	slices.Sort(extraTags)
@@ -856,7 +860,7 @@ func (g *schemaGenerator) addStructField(
 	default:
 		if isRequired {
 			structType.RequiredJSONFields = append(structType.RequiredJSONFields, structField.JSONName)
-		} else if !structField.Type.IsNillable() {
+		} else if !structField.Type.IsNillable() && !notNil {
 			structField.Type = codegen.WrapTypeInPointer(structField.Type)
 		}
 	}
