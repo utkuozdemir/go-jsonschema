@@ -35,6 +35,8 @@ var (
 	minimalNames              bool
 	disableReadOnlyValidation bool
 	disableCustomTypesForMaps bool
+	generateDefaults          bool
+	defaultFuncTemplate       string
 
 	errFlagFormat = errors.New("flag must be in the format URI=PACKAGE")
 
@@ -83,6 +85,8 @@ var (
 				MinimalNames:              minimalNames,
 				DisableReadOnlyValidation: disableReadOnlyValidation,
 				DisableCustomTypesForMaps: disableCustomTypesForMaps,
+				GenerateDefaults:          generateDefaults,
+				DefaultFuncTemplate:       defaultFuncTemplate,
 			}
 			for _, id := range allKeys(schemaPackageMap, schemaOutputMap, schemaRootTypeMap) {
 				mapping := generator.SchemaMapping{SchemaID: id}
@@ -189,6 +193,11 @@ also look for foo.json if --resolve-extension json is provided.`)
 		"Uses the shortest possible names")
 	rootCmd.PersistentFlags().BoolVar(&disableCustomTypesForMaps, "disable-custom-types-for-maps", false,
 		"Do not generate custom types when generating maps")
+	rootCmd.PersistentFlags().BoolVar(&generateDefaults, "generate-defaults", false,
+		"Generate a Default function for each struct that has fields with default values")
+	rootCmd.PersistentFlags().StringVar(&defaultFuncTemplate, "defaults-func-template", generator.DefaultDefaultFuncTemplate,
+		`Template for the default function name, with %s replaced by the type name.
+For example, "%sDefault" produces "FooDefault", "New%s" produces "NewFoo".`)
 
 	abortWithErr(rootCmd.Execute())
 }

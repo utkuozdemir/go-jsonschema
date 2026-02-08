@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/sosodev/duration"
 
 	"github.com/atombender/go-jsonschema/pkg/cmputil"
 	"github.com/atombender/go-jsonschema/pkg/codegen"
@@ -306,6 +307,12 @@ func (g *schemaGenerator) generateDeclaredType(t *schemas.Type, scope nameScope)
 
 	g.output.file.Package.AddDecl(&decl)
 
+	if g.config.GenerateDefaults {
+		if st, ok := theType.(*codegen.StructType); ok {
+			g.generateDefaultFunction(&decl, st)
+		}
+	}
+
 	if g.config.OnlyModels {
 		return &codegen.NamedType{Decl: &decl}, nil
 	}
@@ -546,6 +553,141 @@ func (g *schemaGenerator) generateUnmarshaler(decl *codegen.TypeDecl, validators
 			Name: decl.GetName() + "_validator",
 		})
 	}
+}
+
+func (g *schemaGenerator) generateDefaultFunction(decl *codegen.TypeDecl, structType *codegen.StructType) {
+	for _, f := range structType.Fields {
+		if f.Name == additionalProperties {
+			continue
+		}
+
+		if f.DefaultValue != nil {
+			if _, ok := f.Type.(codegen.DurationType); ok {
+				g.output.file.Package.AddImport("time", "")
+			}
+		}
+	}
+
+	tmpl := g.config.DefaultFuncTemplate
+	funcName := fmt.Sprintf(tmpl, decl.Name)
+
+	g.output.file.Package.AddDecl(&codegen.Method{
+		Impl: func(out *codegen.Emitter) error {
+			out.Commentf("%s returns the default values for %s.", funcName, decl.Name)
+			out.Printlnf("func %s() %s {", funcName, decl.Name)
+			out.Indent(1)
+			out.Printlnf("var %s %s", varNamePlainStruct, decl.Name)
+
+			for _, f := range structType.Fields {
+				if f.Name == additionalProperties {
+					continue
+				}
+
+				if f.DefaultValue != nil {
+					v := &defaultValidator{
+						jsonName:         f.JSONName,
+						fieldName:        f.Name,
+						defaultValueType: f.Type,
+						defaultValue:     f.DefaultValue,
+					}
+
+					if _, ok := f.Type.(codegen.DurationType); ok {
+						if err := g.generateDurationDefaultAssignment(out, v); err != nil {
+							return err
+						}
+
+						continue
+					}
+
+					assignment, err := v.dumpDefaultValueAssignment(out)
+					if err != nil {
+						return fmt.Errorf("cannot generate default for field %s: %w", f.Name, err)
+					}
+
+					out.Printlnf("%s", assignment)
+				} else if nt, isPointer := getNamedType(f.Type); nt != nil {
+					// Look up the canonical Decl at emit time. The NamedType's Decl pointer
+					// may be stale for $ref types (a temporary Decl created during property
+					// processing, later replaced when the definition is processed).
+					canonicalDecl := g.output.declsByName[nt.Decl.Name]
+					if canonicalDecl == nil {
+						continue
+					}
+
+					if _, ok := canonicalDecl.Type.(*codegen.StructType); !ok {
+						continue
+					}
+
+					nestedFuncName := fmt.Sprintf(tmpl, canonicalDecl.Name)
+					if nt.Package != nil {
+						nestedFuncName = nt.Package.Name() + "." + nestedFuncName
+					}
+
+					if isPointer {
+						varName := "default" + f.Name
+						out.Printlnf("%s := %s()", varName, nestedFuncName)
+						out.Printlnf("%s.%s = &%s", varNamePlainStruct, f.Name, varName)
+					} else {
+						out.Printlnf("%s.%s = %s()", varNamePlainStruct, f.Name, nestedFuncName)
+					}
+				}
+			}
+
+			out.Printlnf("return %s", varNamePlainStruct)
+			out.Indent(-1)
+			out.Printlnf("}")
+
+			return nil
+		},
+		Name: decl.GetName() + "_default",
+	})
+}
+
+// getNamedType extracts a NamedType from a codegen.Type, unwrapping PointerType if needed.
+// Returns the NamedType and whether it was wrapped in a pointer. Returns nil if not a NamedType.
+func getNamedType(t codegen.Type) (*codegen.NamedType, bool) {
+	switch v := t.(type) {
+	case *codegen.NamedType:
+		return v, false
+
+	case codegen.NamedType:
+		return &v, false
+
+	case *codegen.PointerType:
+		switch nt := v.Type.(type) {
+		case *codegen.NamedType:
+			return nt, true
+
+		case codegen.NamedType:
+			return &nt, true
+		}
+	}
+
+	return nil, false
+}
+
+func (g *schemaGenerator) generateDurationDefaultAssignment(out *codegen.Emitter, v *defaultValidator) error {
+	defaultDurationISO8601, ok := v.defaultValue.(string)
+	if !ok {
+		return fmt.Errorf("%w: %T given", ErrDefaultDurationIsNotAString, v.defaultValue)
+	}
+
+	if defaultDurationISO8601 == "" {
+		return ErrDurationIsEmpty
+	}
+
+	d, err := duration.Parse(defaultDurationISO8601)
+	if err != nil {
+		return ErrCannotConvertISO8601ToGoFormat
+	}
+
+	goDurationStr := d.ToTimeDuration().String()
+
+	// The duration string is validated at generation time, so parsing cannot fail at runtime.
+	out.Printlnf(`if v, err := time.ParseDuration("%s"); err != nil { panic(err) } else { %s.%s = v }`,
+		goDurationStr, varNamePlainStruct, v.fieldName)
+
+	return nil
 }
 
 func (g *schemaGenerator) generateType(t *schemas.Type, scope nameScope) (codegen.Type, error) {

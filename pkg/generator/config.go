@@ -40,6 +40,12 @@ type Config struct {
 	// DisableCustomTypesForMaps configures the generator to avoid creating a custom type for maps,
 	// and to use the map type directly.
 	DisableCustomTypesForMaps bool
+	// GenerateDefaults configures the generator to produce a Default function for each struct
+	// that has at least one field with a default value.
+	GenerateDefaults bool
+	// DefaultFuncTemplate is a fmt template for the default function name, with %s replaced by
+	// the type name. For example, "%sDefault" produces "FooDefault", "New%s" produces "NewFoo".
+	DefaultFuncTemplate string
 }
 
 type SchemaMapping struct {

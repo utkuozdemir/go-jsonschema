@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	varNamePlainStruct = "plain"
-	varNameRawMap      = "raw"
-	interfaceTypeName  = "interface{}"
-	typePlain          = "Plain"
+	varNamePlainStruct          = "plain"
+	varNameRawMap               = "raw"
+	interfaceTypeName           = "interface{}"
+	typePlain                   = "Plain"
+	DefaultDefaultFuncTemplate  = "%sDefault"
 )
 
 var (
@@ -67,6 +68,10 @@ func New(config Config) (*Generator, error) {
 		formatters:   formatters,
 		loader:       config.Loader,
 		minimalNames: config.MinimalNames,
+	}
+
+	if config.DefaultFuncTemplate == "" {
+		generator.config.DefaultFuncTemplate = DefaultDefaultFuncTemplate
 	}
 
 	if config.Loader == nil {

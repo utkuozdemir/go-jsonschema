@@ -242,6 +242,16 @@ func TestDeeplyNestedMinimalNames(t *testing.T) {
 	testExamples(t, cfg, "./data/deeplyNested")
 }
 
+func TestGenerateDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg := basicConfig
+	cfg.GenerateDefaults = true
+	cfg.OnlyModels = true
+
+	testExamples(t, cfg, "./data/generateDefaults")
+}
+
 func TestRefWithOverridesPath(t *testing.T) {
 	t.Parallel()
 
